@@ -1,0 +1,35 @@
+# Kroki local pour pre-rendre les diagrammes (.puml / .mmd) des assets en SVG
+# dans .github/assets/, sans dependre du service public kroki.io.
+#
+# Outil de MAINTENANCE (enseignant) : les etudiants n'en ont pas besoin.
+#
+# Usage :
+#   docker compose up -d                 # demarre Kroki sur http://localhost:8000
+#   ./.github/assets/render-diagrams.sh  # regenere les .svg a partir des sources
+#   docker compose down                  # arrete Kroki
+#
+# PlantUML est integre au container "core" ; le companion "mermaid" ne sert
+# que si l'on veut aussi pre-rendre des diagrammes Mermaid en SVG.
+# (C'est le meme montage que pour les CM du module.)
+#
+# Note : si le Kroki des CM tourne deja sur le port 8000, inutile de lancer
+# celui-ci - le script de rendu utilisera l'instance deja disponible.
+
+services:
+  core:
+    image: yuzutech/kroki:latest
+    container_name: r202-tp5-kroki
+    ports:
+      - "8000:8000"
+    environment:
+      - KROKI_MERMAID_HOST=mermaid
+    depends_on:
+      - mermaid
+    restart: unless-stopped
+
+  mermaid:
+    image: yuzutech/kroki-mermaid:latest
+    container_name: r202-tp5-kroki-mermaid
+    expose:
+      - "8002"
+    restart: unless-stopped

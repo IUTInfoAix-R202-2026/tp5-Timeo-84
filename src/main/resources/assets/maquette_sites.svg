@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="496" viewBox="0 0 640 496">
+  <defs>
+    <style>
+      text { font-family: 'Segoe UI', Arial, sans-serif; }
+      .title { font-size: 15px; font-weight: bold; fill: #2c3e50; }
+      .th { font-size: 12px; font-weight: bold; fill: #2c3e50; }
+      .td { font-size: 12px; fill: #2c3e50; }
+      .tdsel { font-size: 12px; fill: #ffffff; }
+      .muted { font-size: 12px; fill: #6a737d; }
+      .lab { font-size: 12px; font-weight: bold; fill: #2c3e50; }
+      .ph { font-size: 12px; fill: #2c3e50; }
+      .btn { font-size: 12px; font-weight: bold; fill: white; }
+      .id-tag { font-size: 10px; fill: #7f8c8d; font-style: italic; }
+    </style>
+  </defs>
+
+  <!-- Fond -->
+  <rect width="640" height="496" rx="8" ry="8" fill="#f8f9fa" stroke="#dee2e6" stroke-width="1.5"/>
+  <text x="16" y="28" class="title">VigieChiro - Mes sites de suivi (persistés en SQLite)</text>
+
+  <!-- TableView -->
+  <rect x="16" y="42" width="608" height="240" fill="white" stroke="#4a90d9" stroke-width="1.5"/>
+  <rect x="16" y="42" width="608" height="26" fill="#e8eef5" stroke="#bdc3c7" stroke-width="1"/>
+  <text x="26" y="60" class="th">Carré</text>
+  <text x="126" y="60" class="th">Nom</text>
+  <text x="426" y="60" class="th">Protocole</text>
+  <line x1="116" y1="42" x2="116" y2="282" stroke="#e6e6e6"/>
+  <line x1="416" y1="42" x2="416" y2="282" stroke="#e6e6e6"/>
+
+  <!-- Ligne selectionnee (bleu plein, texte blanc) -->
+  <rect x="17" y="69" width="606" height="27" fill="#2d8fd5"/>
+  <text x="26" y="87" class="tdsel">640380</text>
+  <text x="126" y="87" class="tdsel">Étang de la Tuilière</text>
+  <text x="426" y="87" class="tdsel">PointFixeStandard</text>
+
+  <!-- Resume -->
+  <text x="16" y="302" class="muted">1 site(s) suivi(s)</text>
+  <text x="120" y="302" class="id-tag">#labelResume ← Bindings.size(#tableSites)</text>
+
+  <line x1="16" y1="320" x2="624" y2="320" stroke="#e0e0e0"/>
+
+  <!-- Formulaire d'ajout -->
+  <text x="16" y="342" class="lab">Déclarer un nouveau site</text>
+  <rect x="16" y="352" width="120" height="30" rx="3" fill="white" stroke="#bdc3c7" stroke-width="1"/>
+  <text x="26" y="371" class="ph">810915</text>
+  <rect x="144" y="352" width="170" height="30" rx="3" fill="white" stroke="#bdc3c7" stroke-width="1"/>
+  <text x="154" y="371" class="ph">Mare des Aulnes</text>
+  <rect x="322" y="352" width="170" height="30" rx="3" fill="white" stroke="#bdc3c7" stroke-width="1"/>
+  <text x="332" y="371" class="ph">PointFixeRecherche</text>
+  <path d="M474,365 l10,0 l-5,8 z" fill="#7f8c8d"/>
+  <rect x="500" y="352" width="80" height="30" rx="4" fill="#27ae60" stroke="#1e8449" stroke-width="1"/>
+  <text x="540" y="371" text-anchor="middle" class="btn">Ajouter</text>
+
+  <!-- Bouton supprimer (rouge car une ligne est selectionnee) -->
+  <rect x="16" y="394" width="206" height="30" rx="4" fill="#e74c3c" stroke="#c0392b" stroke-width="1"/>
+  <text x="119" y="413" text-anchor="middle" class="btn">Supprimer le site sélectionné</text>
+
+  <!-- Annotations -->
+  <text x="16" y="448" class="id-tag">#tableSites ← ObservableList&lt;Site&gt; chargée depuis SiteDao.findAll() · Ajouter/Supprimer écrivent</text>
+  <text x="16" y="463" class="id-tag">en base (dao.insert / dao.delete) ET dans la liste → la TableView se rafraîchit seule.</text>
+  <text x="16" y="481" class="id-tag">assemblé par Guice : Vue → Controller → ViewModel → SiteDao → DataSource → SQLite</text>
+</svg>

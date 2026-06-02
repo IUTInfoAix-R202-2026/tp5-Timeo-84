@@ -1,0 +1,481 @@
+# GitHub Classroom autograding workflow.
+# Le bloc autograding (steps Classroom + reporter) est régénéré par
+# update-autograding.sh en fonction des sous-paquets d'exercices
+# détectés. Ne pas éditer à la main le bloc entre marqueurs.
+name: GitHub Classroom Workflow
+
+# Le calcul de note ne tourne que sur main : un exercice n'est livré qu'au
+# moment du merge. Les pushes sur les feature branches (exerciceN) restent
+# couverts par maven.yml (compilation + tests), qui suffit pour le feedback
+# pédagogique. workflow_dispatch reste dispo pour un regrade manuel.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: write
+
+# Sérialise les runs de notation d'une même ref. Sans ça, plusieurs pushes/merges
+# rapprochés (ex. fusionner 6 PR en < 2 min) lancent des runs concurrents qui se
+# marchent dessus sur le cache des rapports Surefire (read-modify-write) : chaque
+# run restaure l'instantané le plus récent AU MOMENT de son démarrage, puis le
+# réécrit À LA FIN. Comme les runs se chevauchent, le « dernier qui écrit »
+# republie un instantané périmé où les rapports d'exercices traités en parallèle
+# manquent ou sont restés `skipped` -> ces exercices sont notés 0 à tort.
+# En sérialisant, chaque run restaure le cache COMPLET du run précédent.
+concurrency:
+  group: autograding-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Autograding
+    if: github.repository != 'IUTInfoAix-R202/template-tp-javafx'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Historique complet pour que `git diff $BEFORE..HEAD` fonctionne
+          # dans le step de scope (sans ça, on tomberait sur ALL à chaque push).
+          fetch-depth: 0
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: 'zulu'
+          # JavaFX 26 vient des deps Maven org.openjfx ; la Headless Platform
+          # (glass.platform=Headless) est 100 % logicielle, pas besoin de jdk+fx.
+          cache: maven
+
+      #@@@AUTOGRADING-BEGIN@@@ (généré par update-autograding.sh, ne pas éditer à la main)
+      - name: Compilation
+        id: compilation
+        uses: IUTInfoAix-R202/autograding-command-grader@main
+        with:
+          test-name: Compilation
+          setup-command: ""
+          command: ./mvnw -B -q compile
+          timeout: 5
+          max-score: 100
+
+      - name: Restaurer le cache des rapports Surefire
+        id: surefire_cache
+        uses: actions/cache/restore@v5
+        with:
+          path: target/surefire-reports
+          key: surefire-${{ github.ref_name }}-${{ github.sha }}
+          restore-keys: |
+            surefire-${{ github.ref_name }}-
+            surefire-main-
+
+      - name: Détecter les exercices impactés
+        id: scope
+        run: |
+          set +e
+          BEFORE="${{ github.event.before }}"
+          # Cache vide (premier run, expiration GHA) -> regrade complet sinon les
+          # XMLs absents donneraient un score 0 à tout le monde.
+          if [ ! -d target/surefire-reports ] || [ -z "$(ls -A target/surefire-reports 2>/dev/null)" ]; then
+            echo "filter=ALL" >> "$GITHUB_OUTPUT"
+            echo "reason=cache des rapports absent ou expiré" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Premier push sur la branche, ou commit base introuvable -> tout regrader
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            echo "filter=ALL" >> "$GITHUB_OUTPUT"
+            echo "reason=premier push sur la branche ou commit base introuvable" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Fichiers globaux : invalident le cache (regrade complet)
+          if git diff --name-only "$BEFORE" HEAD -- \
+              pom.xml \
+              '.github/workflows/**' \
+              '*.sh' \
+              'src/main/java/fr/univ_amu/iut/App.java' \
+              'src/main/java/fr/univ_amu/iut/module-info.java' \
+              'src/test/java/fr/univ_amu/iut/AppTest.java' \
+              | grep -q .; then
+            echo "filter=ALL" >> "$GITHUB_OUTPUT"
+            echo "reason=fichier global modifié (pom.xml / App / workflows / scripts)" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Détection fine : paquets exerciceN / bonusN modifiés
+          pkgs=$(git diff --name-only "$BEFORE" HEAD -- \
+              'src/main/java/fr/univ_amu/iut/exercice*/**' \
+              'src/test/java/fr/univ_amu/iut/exercice*/**' \
+              'src/main/java/fr/univ_amu/iut/bonus*/**' \
+              'src/test/java/fr/univ_amu/iut/bonus*/**' \
+              | grep -oE 'fr/univ_amu/iut/(exercice[0-9]+|bonus[0-9]+)' \
+              | sort -u | tr '/' '.')
+          if [ -z "$pkgs" ]; then
+            echo "filter=NONE" >> "$GITHUB_OUTPUT"
+            echo "reason=aucune source d'exercice modifiée (mvnw test sauté, scores restaurés du cache)" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Énumère les classes de test des paquets impactés (FQCN explicites)
+          classes=""
+          for pkg in $pkgs; do
+            pkg_dir="src/test/java/$(echo "$pkg" | tr '.' '/')"
+            while IFS= read -r f; do
+              cls=$(basename "$f" .java)
+              classes="${classes}${classes:+,}${pkg}.${cls}"
+            done < <(find "$pkg_dir" -type f -name '*.java' 2>/dev/null)
+          done
+          if [ -z "$classes" ]; then
+            echo "filter=NONE" >> "$GITHUB_OUTPUT"
+            echo "reason=paquets modifiés mais aucune classe de test trouvée" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "filter=$classes" >> "$GITHUB_OUTPUT"
+          echo "reason=paquets impactés : $(echo $pkgs | tr '\\n' ' ')" >> "$GITHUB_OUTPUT"
+
+      - name: Lancer les tests impactés
+        id: run_tests
+        if: steps.scope.outputs.filter != 'NONE'
+        continue-on-error: true
+        run: |
+          echo "Scope : ${{ steps.scope.outputs.reason }}"
+          if [ "${{ steps.scope.outputs.filter }}" = "ALL" ]; then
+            ./mvnw -B test -DfailIfNoTests=false
+          else
+            ./mvnw -B test -Dtest='${{ steps.scope.outputs.filter }}' -DfailIfNoTests=false
+          fi
+
+
+      - name: "exercice1 : la_lecture_renvoie_les_quatre_taxons_du_fil_rouge"
+        id: exercice1_la_lecture_renvoie_les_quatre_taxons_du_fil_rouge
+        uses: IUTInfoAix-R202/autograding-command-grader@main
+        with:
+          test-name: "exercice1 : la_lecture_renvoie_les_quatre_taxons_du_fil_rouge"
+          setup-command: ""
+          command: ./grade-test.sh fr.univ_amu.iut.exercice1.ExempleJDBCTest la_lecture_renvoie_les_quatre_taxons_du_fil_rouge
+          timeout: 5
+          max-score: 65
+
+      - name: "exercice1 : chaque_ligne_a_le_format_code_tiret_nom"
+        id: exercice1_chaque_ligne_a_le_format_code_tiret_nom
+        uses: IUTInfoAix-R202/autograding-command-grader@main
+        with:
+          test-name: "exercice1 : chaque_ligne_a_le_format_code_tiret_nom"
+          setup-command: ""
+          command: ./grade-test.sh fr.univ_amu.iut.exercice1.ExempleJDBCTest chaque_ligne_a_le_format_code_tiret_nom
+          timeout: 5
+          max-score: 64
+
+      - name: "exercice2 : la_base_initialisee_contient_les_quatre_taxons"
+        id: exercice2_la_base_initialisee_contient_les_quatre_taxons
+        uses: IUTInfoAix-R202/autograding-command-grader@main
+        with:
+          test-name: "exercice2 : la_base_initialisee_contient_les_quatre_taxons"
+          setup-command: ""
+          command: ./grade-test.sh fr.univ_amu.iut.exercice2.BaseDeDonneesTest la_base_initialisee_contient_les_quatre_taxons
+          timeout: 5
+          max-score: 43
+
+      - name: "exercice2 : le_site_du_fil_rouge_est_present"
+        id: exercice2_le_site_du_fil_rouge_est_present
+        uses: IUTInfoAix-R202/autograding-command-grader@main
+        with:
+          test-name: "exercice2 : le_site_du_fil_rouge_est_present"
+          setup-command: ""
+          command: ./grade-test.sh fr.univ_amu.iut.exercice2.BaseDeDonneesTest le_site_du_fil_rouge_est_present
+          timeout: 5
+          max-score: 43
+
+      - name: "exercice2 : les_cles_etrangeres_sont_actives"
+        id: exercice2_les_cles_etrangeres_sont_actives
+        uses: IUTInfoAix-R202/autograding-command-grader@main
+        with:
+          test-name: "exercice2 : les_cles_etrangeres_sont_actives"
+          setup-command: ""
+          command: ./grade-test.sh fr.univ_amu.iut.exercice2.BaseDeDonneesTest les_cles_etrangeres_sont_actives
+          timeout: 5
+          max-score: 43
+
+      - name: "exercice3 : trouver_tous_renvoie_les_quatre_taxons_tries_par_code"
+        id: exercice3_trouver_tous_renvoie_les_quatre_taxons_tries_par_code
+        uses: IUTInfoAix-R202/autograding-command-grader@main
+        with:
+          test-name: "exercice3 : trouver_tous_renvoie_les_quatre_taxons_tries_par_code"
+          setup-command: ""
+          command: ./grade-test.sh fr.univ_amu.iut.exercice3.TaxonDaoTest trouver_tous_renvoie_les_quatre_taxons_tries_par_code
+          timeout: 5
+          max-score: 43
+
+      - name: "exercice3 : trouver_par_code_renvoie_le_taxon_attendu"
+        id: exercice3_trouver_par_code_renvoie_le_taxon_attendu
+        uses: IUTInfoAix-R202/autograding-command-grader@main
+        with:
+          test-name: "exercice3 : trouver_par_code_renvoie_le_taxon_attendu"
+          setup-command: ""
+          command: ./grade-test.sh fr.univ_amu.iut.exercice3.TaxonDaoTest trouver_par_code_renvoie_le_taxon_attendu
+          timeout: 5
+          max-score: 43
+
+      - name: "exercice3 : trouver_par_code_inconnu_renvoie_vide"
+        id: exercice3_trouver_par_code_inconnu_renvoie_vide
+        uses: IUTInfoAix-R202/autograding-command-grader@main
+        with:
+          test-name: "exercice3 : trouver_par_code_inconnu_renvoie_vide"
+          setup-command: ""
+          command: ./grade-test.sh fr.univ_amu.iut.exercice3.TaxonDaoTest trouver_par_code_inconnu_renvoie_vide
+          timeout: 5
+          max-score: 43
+
+      - name: "exercice4 : inserer_ajoute_un_site_relisible"
+        id: exercice4_inserer_ajoute_un_site_relisible
+        uses: IUTInfoAix-R202/autograding-command-grader@main
+        with:
+          test-name: "exercice4 : inserer_ajoute_un_site_relisible"
+          setup-command: ""
+          command: ./grade-test.sh fr.univ_amu.iut.exercice4.SiteDaoTest inserer_ajoute_un_site_relisible
+          timeout: 5
+          max-score: 26
+
+      - name: "exercice4 : mettre_a_jour_modifie_les_champs_du_site"
+        id: exercice4_mettre_a_jour_modifie_les_champs_du_site
+        uses: IUTInfoAix-R202/autograding-command-grader@main
+        with:
+          test-name: "exercice4 : mettre_a_jour_modifie_les_champs_du_site"
+          setup-command: ""
+          command: ./grade-test.sh fr.univ_amu.iut.exercice4.SiteDaoTest mettre_a_jour_modifie_les_champs_du_site
+          timeout: 5
+          max-score: 26
+
+      - name: "exercice4 : supprimer_retire_le_site"
+        id: exercice4_supprimer_retire_le_site
+        uses: IUTInfoAix-R202/autograding-command-grader@main
+        with:
+          test-name: "exercice4 : supprimer_retire_le_site"
+          setup-command: ""
+          command: ./grade-test.sh fr.univ_amu.iut.exercice4.SiteDaoTest supprimer_retire_le_site
+          timeout: 5
+          max-score: 26
+
+      - name: "exercice4 : mettre_a_jour_ne_modifie_que_le_site_vise"
+        id: exercice4_mettre_a_jour_ne_modifie_que_le_site_vise
+        uses: IUTInfoAix-R202/autograding-command-grader@main
+        with:
+          test-name: "exercice4 : mettre_a_jour_ne_modifie_que_le_site_vise"
+          setup-command: ""
+          command: ./grade-test.sh fr.univ_amu.iut.exercice4.SiteDaoTest mettre_a_jour_ne_modifie_que_le_site_vise
+          timeout: 5
+          max-score: 26
+
+      - name: "exercice4 : supprimer_ne_retire_que_le_site_vise"
+        id: exercice4_supprimer_ne_retire_que_le_site_vise
+        uses: IUTInfoAix-R202/autograding-command-grader@main
+        with:
+          test-name: "exercice4 : supprimer_ne_retire_que_le_site_vise"
+          setup-command: ""
+          command: ./grade-test.sh fr.univ_amu.iut.exercice4.SiteDaoTest supprimer_ne_retire_que_le_site_vise
+          timeout: 5
+          max-score: 25
+
+      - name: "exercice5 : la_jointure_remonte_les_especes_observees_sur_le_site"
+        id: exercice5_la_jointure_remonte_les_especes_observees_sur_le_site
+        uses: IUTInfoAix-R202/autograding-command-grader@main
+        with:
+          test-name: "exercice5 : la_jointure_remonte_les_especes_observees_sur_le_site"
+          setup-command: ""
+          command: ./grade-test.sh fr.univ_amu.iut.exercice5.DetailSiteDaoTest la_jointure_remonte_les_especes_observees_sur_le_site
+          timeout: 5
+          max-score: 43
+
+      - name: "exercice5 : la_jointure_dedoublonne_les_especes"
+        id: exercice5_la_jointure_dedoublonne_les_especes
+        uses: IUTInfoAix-R202/autograding-command-grader@main
+        with:
+          test-name: "exercice5 : la_jointure_dedoublonne_les_especes"
+          setup-command: ""
+          command: ./grade-test.sh fr.univ_amu.iut.exercice5.DetailSiteDaoTest la_jointure_dedoublonne_les_especes
+          timeout: 5
+          max-score: 43
+
+      - name: "exercice5 : un_site_sans_observation_renvoie_une_liste_vide"
+        id: exercice5_un_site_sans_observation_renvoie_une_liste_vide
+        uses: IUTInfoAix-R202/autograding-command-grader@main
+        with:
+          test-name: "exercice5 : un_site_sans_observation_renvoie_une_liste_vide"
+          setup-command: ""
+          command: ./grade-test.sh fr.univ_amu.iut.exercice5.DetailSiteDaoTest un_site_sans_observation_renvoie_une_liste_vide
+          timeout: 5
+          max-score: 42
+
+      - name: "exercice6 : un_import_valide_persiste_le_passage"
+        id: exercice6_un_import_valide_persiste_le_passage
+        uses: IUTInfoAix-R202/autograding-command-grader@main
+        with:
+          test-name: "exercice6 : un_import_valide_persiste_le_passage"
+          setup-command: ""
+          command: ./grade-test.sh fr.univ_amu.iut.exercice6.ImportPassageServiceTest un_import_valide_persiste_le_passage
+          timeout: 5
+          max-score: 43
+
+      - name: "exercice6 : un_import_valide_persiste_les_observations"
+        id: exercice6_un_import_valide_persiste_les_observations
+        uses: IUTInfoAix-R202/autograding-command-grader@main
+        with:
+          test-name: "exercice6 : un_import_valide_persiste_les_observations"
+          setup-command: ""
+          command: ./grade-test.sh fr.univ_amu.iut.exercice6.ImportPassageServiceTest un_import_valide_persiste_les_observations
+          timeout: 5
+          max-score: 43
+
+      - name: "exercice6 : un_import_avec_un_taxon_inexistant_est_entierement_annule"
+        id: exercice6_un_import_avec_un_taxon_inexistant_est_entierement_annule
+        uses: IUTInfoAix-R202/autograding-command-grader@main
+        with:
+          test-name: "exercice6 : un_import_avec_un_taxon_inexistant_est_entierement_annule"
+          setup-command: ""
+          command: ./grade-test.sh fr.univ_amu.iut.exercice6.ImportPassageServiceTest un_import_avec_un_taxon_inexistant_est_entierement_annule
+          timeout: 5
+          max-score: 42
+
+      - name: "exercice7 : le_tableau_affiche_les_sites_persistes"
+        id: exercice7_le_tableau_affiche_les_sites_persistes
+        uses: IUTInfoAix-R202/autograding-command-grader@main
+        with:
+          test-name: "exercice7 : le_tableau_affiche_les_sites_persistes"
+          setup-command: ""
+          command: ./grade-test.sh fr.univ_amu.iut.exercice7.SitesControllerTest le_tableau_affiche_les_sites_persistes
+          timeout: 5
+          max-score: 13
+
+      - name: "exercice7 : ajouter_un_site_via_le_formulaire_ajoute_une_ligne"
+        id: exercice7_ajouter_un_site_via_le_formulaire_ajoute_une_ligne
+        uses: IUTInfoAix-R202/autograding-command-grader@main
+        with:
+          test-name: "exercice7 : ajouter_un_site_via_le_formulaire_ajoute_une_ligne"
+          setup-command: ""
+          command: ./grade-test.sh fr.univ_amu.iut.exercice7.SitesControllerTest ajouter_un_site_via_le_formulaire_ajoute_une_ligne
+          timeout: 5
+          max-score: 13
+
+      - name: "exercice7 : les_colonnes_affichent_les_donnees_du_site"
+        id: exercice7_les_colonnes_affichent_les_donnees_du_site
+        uses: IUTInfoAix-R202/autograding-command-grader@main
+        with:
+          test-name: "exercice7 : les_colonnes_affichent_les_donnees_du_site"
+          setup-command: ""
+          command: ./grade-test.sh fr.univ_amu.iut.exercice7.SitesControllerTest les_colonnes_affichent_les_donnees_du_site
+          timeout: 5
+          max-score: 13
+
+      - name: "exercice7 : le_resume_affiche_le_nombre_de_sites"
+        id: exercice7_le_resume_affiche_le_nombre_de_sites
+        uses: IUTInfoAix-R202/autograding-command-grader@main
+        with:
+          test-name: "exercice7 : le_resume_affiche_le_nombre_de_sites"
+          setup-command: ""
+          command: ./grade-test.sh fr.univ_amu.iut.exercice7.SitesControllerTest le_resume_affiche_le_nombre_de_sites
+          timeout: 5
+          max-score: 13
+
+      - name: "exercice7 : la_liste_des_protocoles_propose_les_deux_valeurs"
+        id: exercice7_la_liste_des_protocoles_propose_les_deux_valeurs
+        uses: IUTInfoAix-R202/autograding-command-grader@main
+        with:
+          test-name: "exercice7 : la_liste_des_protocoles_propose_les_deux_valeurs"
+          setup-command: ""
+          command: ./grade-test.sh fr.univ_amu.iut.exercice7.SitesControllerTest la_liste_des_protocoles_propose_les_deux_valeurs
+          timeout: 5
+          max-score: 13
+
+      - name: "exercice7 : le_bouton_supprimer_est_desactive_sans_selection_puis_actif"
+        id: exercice7_le_bouton_supprimer_est_desactive_sans_selection_puis_actif
+        uses: IUTInfoAix-R202/autograding-command-grader@main
+        with:
+          test-name: "exercice7 : le_bouton_supprimer_est_desactive_sans_selection_puis_actif"
+          setup-command: ""
+          command: ./grade-test.sh fr.univ_amu.iut.exercice7.SitesControllerTest le_bouton_supprimer_est_desactive_sans_selection_puis_actif
+          timeout: 5
+          max-score: 13
+
+      - name: "exercice7 : au_demarrage_les_sites_sont_charges_depuis_la_base"
+        id: exercice7_au_demarrage_les_sites_sont_charges_depuis_la_base
+        uses: IUTInfoAix-R202/autograding-command-grader@main
+        with:
+          test-name: "exercice7 : au_demarrage_les_sites_sont_charges_depuis_la_base"
+          setup-command: ""
+          command: ./grade-test.sh fr.univ_amu.iut.exercice7.SitesViewModelTest au_demarrage_les_sites_sont_charges_depuis_la_base
+          timeout: 5
+          max-score: 13
+
+      - name: "exercice7 : le_resume_reflete_le_nombre_de_sites"
+        id: exercice7_le_resume_reflete_le_nombre_de_sites
+        uses: IUTInfoAix-R202/autograding-command-grader@main
+        with:
+          test-name: "exercice7 : le_resume_reflete_le_nombre_de_sites"
+          setup-command: ""
+          command: ./grade-test.sh fr.univ_amu.iut.exercice7.SitesViewModelTest le_resume_reflete_le_nombre_de_sites
+          timeout: 5
+          max-score: 13
+
+      - name: "exercice7 : ajouter_persiste_le_site_et_l_ajoute_a_la_liste"
+        id: exercice7_ajouter_persiste_le_site_et_l_ajoute_a_la_liste
+        uses: IUTInfoAix-R202/autograding-command-grader@main
+        with:
+          test-name: "exercice7 : ajouter_persiste_le_site_et_l_ajoute_a_la_liste"
+          setup-command: ""
+          command: ./grade-test.sh fr.univ_amu.iut.exercice7.SitesViewModelTest ajouter_persiste_le_site_et_l_ajoute_a_la_liste
+          timeout: 5
+          max-score: 12
+
+      - name: "exercice7 : supprimer_retire_le_site_de_la_liste_et_de_la_base"
+        id: exercice7_supprimer_retire_le_site_de_la_liste_et_de_la_base
+        uses: IUTInfoAix-R202/autograding-command-grader@main
+        with:
+          test-name: "exercice7 : supprimer_retire_le_site_de_la_liste_et_de_la_base"
+          setup-command: ""
+          command: ./grade-test.sh fr.univ_amu.iut.exercice7.SitesViewModelTest supprimer_retire_le_site_de_la_liste_et_de_la_base
+          timeout: 5
+          max-score: 12
+
+      - name: Autograding Reporter
+        uses: IUTInfoAix-R202/autograding-grading-reporter@main
+        continue-on-error: true
+        env:
+          COMPILATION_RESULTS: "${{ steps.compilation.outputs.result }}"
+          EXERCICE1_LA_LECTURE_RENVOIE_LES_QUATRE_TAXONS_DU_FIL_ROUGE_RESULTS: "${{ steps.exercice1_la_lecture_renvoie_les_quatre_taxons_du_fil_rouge.outputs.result }}"
+          EXERCICE1_CHAQUE_LIGNE_A_LE_FORMAT_CODE_TIRET_NOM_RESULTS: "${{ steps.exercice1_chaque_ligne_a_le_format_code_tiret_nom.outputs.result }}"
+          EXERCICE2_LA_BASE_INITIALISEE_CONTIENT_LES_QUATRE_TAXONS_RESULTS: "${{ steps.exercice2_la_base_initialisee_contient_les_quatre_taxons.outputs.result }}"
+          EXERCICE2_LE_SITE_DU_FIL_ROUGE_EST_PRESENT_RESULTS: "${{ steps.exercice2_le_site_du_fil_rouge_est_present.outputs.result }}"
+          EXERCICE2_LES_CLES_ETRANGERES_SONT_ACTIVES_RESULTS: "${{ steps.exercice2_les_cles_etrangeres_sont_actives.outputs.result }}"
+          EXERCICE3_TROUVER_TOUS_RENVOIE_LES_QUATRE_TAXONS_TRIES_PAR_CODE_RESULTS: "${{ steps.exercice3_trouver_tous_renvoie_les_quatre_taxons_tries_par_code.outputs.result }}"
+          EXERCICE3_TROUVER_PAR_CODE_RENVOIE_LE_TAXON_ATTENDU_RESULTS: "${{ steps.exercice3_trouver_par_code_renvoie_le_taxon_attendu.outputs.result }}"
+          EXERCICE3_TROUVER_PAR_CODE_INCONNU_RENVOIE_VIDE_RESULTS: "${{ steps.exercice3_trouver_par_code_inconnu_renvoie_vide.outputs.result }}"
+          EXERCICE4_INSERER_AJOUTE_UN_SITE_RELISIBLE_RESULTS: "${{ steps.exercice4_inserer_ajoute_un_site_relisible.outputs.result }}"
+          EXERCICE4_METTRE_A_JOUR_MODIFIE_LES_CHAMPS_DU_SITE_RESULTS: "${{ steps.exercice4_mettre_a_jour_modifie_les_champs_du_site.outputs.result }}"
+          EXERCICE4_SUPPRIMER_RETIRE_LE_SITE_RESULTS: "${{ steps.exercice4_supprimer_retire_le_site.outputs.result }}"
+          EXERCICE4_METTRE_A_JOUR_NE_MODIFIE_QUE_LE_SITE_VISE_RESULTS: "${{ steps.exercice4_mettre_a_jour_ne_modifie_que_le_site_vise.outputs.result }}"
+          EXERCICE4_SUPPRIMER_NE_RETIRE_QUE_LE_SITE_VISE_RESULTS: "${{ steps.exercice4_supprimer_ne_retire_que_le_site_vise.outputs.result }}"
+          EXERCICE5_LA_JOINTURE_REMONTE_LES_ESPECES_OBSERVEES_SUR_LE_SITE_RESULTS: "${{ steps.exercice5_la_jointure_remonte_les_especes_observees_sur_le_site.outputs.result }}"
+          EXERCICE5_LA_JOINTURE_DEDOUBLONNE_LES_ESPECES_RESULTS: "${{ steps.exercice5_la_jointure_dedoublonne_les_especes.outputs.result }}"
+          EXERCICE5_UN_SITE_SANS_OBSERVATION_RENVOIE_UNE_LISTE_VIDE_RESULTS: "${{ steps.exercice5_un_site_sans_observation_renvoie_une_liste_vide.outputs.result }}"
+          EXERCICE6_UN_IMPORT_VALIDE_PERSISTE_LE_PASSAGE_RESULTS: "${{ steps.exercice6_un_import_valide_persiste_le_passage.outputs.result }}"
+          EXERCICE6_UN_IMPORT_VALIDE_PERSISTE_LES_OBSERVATIONS_RESULTS: "${{ steps.exercice6_un_import_valide_persiste_les_observations.outputs.result }}"
+          EXERCICE6_UN_IMPORT_AVEC_UN_TAXON_INEXISTANT_EST_ENTIEREMENT_ANNULE_RESULTS: "${{ steps.exercice6_un_import_avec_un_taxon_inexistant_est_entierement_annule.outputs.result }}"
+          EXERCICE7_LE_TABLEAU_AFFICHE_LES_SITES_PERSISTES_RESULTS: "${{ steps.exercice7_le_tableau_affiche_les_sites_persistes.outputs.result }}"
+          EXERCICE7_AJOUTER_UN_SITE_VIA_LE_FORMULAIRE_AJOUTE_UNE_LIGNE_RESULTS: "${{ steps.exercice7_ajouter_un_site_via_le_formulaire_ajoute_une_ligne.outputs.result }}"
+          EXERCICE7_LES_COLONNES_AFFICHENT_LES_DONNEES_DU_SITE_RESULTS: "${{ steps.exercice7_les_colonnes_affichent_les_donnees_du_site.outputs.result }}"
+          EXERCICE7_LE_RESUME_AFFICHE_LE_NOMBRE_DE_SITES_RESULTS: "${{ steps.exercice7_le_resume_affiche_le_nombre_de_sites.outputs.result }}"
+          EXERCICE7_LA_LISTE_DES_PROTOCOLES_PROPOSE_LES_DEUX_VALEURS_RESULTS: "${{ steps.exercice7_la_liste_des_protocoles_propose_les_deux_valeurs.outputs.result }}"
+          EXERCICE7_LE_BOUTON_SUPPRIMER_EST_DESACTIVE_SANS_SELECTION_PUIS_ACTIF_RESULTS: "${{ steps.exercice7_le_bouton_supprimer_est_desactive_sans_selection_puis_actif.outputs.result }}"
+          EXERCICE7_AU_DEMARRAGE_LES_SITES_SONT_CHARGES_DEPUIS_LA_BASE_RESULTS: "${{ steps.exercice7_au_demarrage_les_sites_sont_charges_depuis_la_base.outputs.result }}"
+          EXERCICE7_LE_RESUME_REFLETE_LE_NOMBRE_DE_SITES_RESULTS: "${{ steps.exercice7_le_resume_reflete_le_nombre_de_sites.outputs.result }}"
+          EXERCICE7_AJOUTER_PERSISTE_LE_SITE_ET_L_AJOUTE_A_LA_LISTE_RESULTS: "${{ steps.exercice7_ajouter_persiste_le_site_et_l_ajoute_a_la_liste.outputs.result }}"
+          EXERCICE7_SUPPRIMER_RETIRE_LE_SITE_DE_LA_LISTE_ET_DE_LA_BASE_RESULTS: "${{ steps.exercice7_supprimer_retire_le_site_de_la_liste_et_de_la_base.outputs.result }}"
+        with:
+          runners: compilation,exercice1_la_lecture_renvoie_les_quatre_taxons_du_fil_rouge,exercice1_chaque_ligne_a_le_format_code_tiret_nom,exercice2_la_base_initialisee_contient_les_quatre_taxons,exercice2_le_site_du_fil_rouge_est_present,exercice2_les_cles_etrangeres_sont_actives,exercice3_trouver_tous_renvoie_les_quatre_taxons_tries_par_code,exercice3_trouver_par_code_renvoie_le_taxon_attendu,exercice3_trouver_par_code_inconnu_renvoie_vide,exercice4_inserer_ajoute_un_site_relisible,exercice4_mettre_a_jour_modifie_les_champs_du_site,exercice4_supprimer_retire_le_site,exercice4_mettre_a_jour_ne_modifie_que_le_site_vise,exercice4_supprimer_ne_retire_que_le_site_vise,exercice5_la_jointure_remonte_les_especes_observees_sur_le_site,exercice5_la_jointure_dedoublonne_les_especes,exercice5_un_site_sans_observation_renvoie_une_liste_vide,exercice6_un_import_valide_persiste_le_passage,exercice6_un_import_valide_persiste_les_observations,exercice6_un_import_avec_un_taxon_inexistant_est_entierement_annule,exercice7_le_tableau_affiche_les_sites_persistes,exercice7_ajouter_un_site_via_le_formulaire_ajoute_une_ligne,exercice7_les_colonnes_affichent_les_donnees_du_site,exercice7_le_resume_affiche_le_nombre_de_sites,exercice7_la_liste_des_protocoles_propose_les_deux_valeurs,exercice7_le_bouton_supprimer_est_desactive_sans_selection_puis_actif,exercice7_au_demarrage_les_sites_sont_charges_depuis_la_base,exercice7_le_resume_reflete_le_nombre_de_sites,exercice7_ajouter_persiste_le_site_et_l_ajoute_a_la_liste,exercice7_supprimer_retire_le_site_de_la_liste_et_de_la_base
+
+      - name: Sauvegarder le cache des rapports Surefire
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: target/surefire-reports
+          key: surefire-${{ github.ref_name }}-${{ github.sha }}
+      #@@@AUTOGRADING-END@@@

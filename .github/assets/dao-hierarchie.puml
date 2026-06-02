@@ -1,0 +1,34 @@
+@startuml
+' Hierarchie des DAO (TP5, encart "Le DAO" de l'exercice 3).
+' SVG regenere par .github/assets/render-diagrams.sh (Kroki local).
+' Bleu = DAO ecrits dans le TP ; gris = DAO d'une couche complete (a venir).
+hide empty members
+skinparam shadowing false
+skinparam dpi 120
+skinparam defaultFontSize 15
+skinparam defaultFontName Helvetica
+skinparam classAttributeIconSize 0
+skinparam classAttributeFontSize 14
+skinparam classBorderThickness 1.4
+skinparam ArrowColor #34495e
+
+interface Dao #E8DAEF {
+  +findAll() : List<T>
+  +getById(cle) : Optional<T>
+  +insert(T)
+  +update(T)
+  +delete(cle)
+}
+
+class TaxonDao #D4E6F1
+class SiteDao #D4E6F1
+class PointEcouteDao #EAECEE
+class PassageDao #EAECEE
+class ObservationDao #EAECEE
+
+Dao <|.. TaxonDao
+Dao <|.. SiteDao
+Dao <|.. PointEcouteDao
+Dao <|.. PassageDao
+Dao <|.. ObservationDao
+@enduml

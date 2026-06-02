@@ -1,0 +1,8 @@
+flowchart LR
+  S["initialiserSiNecessaire(source)"] --> Q{"table taxon<br/>déjà présente ?"}
+  Q -->|non| I["initialiser : schema.sql + seed.sql"]
+  Q -->|oui| N["ne rien faire (déjà prête)"]
+  style S fill:#4a90d9,color:white
+  style Q fill:#e8a838,color:white
+  style I fill:#7bb563,color:white
+  style N fill:#b0bec5,color:#333

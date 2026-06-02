@@ -1,0 +1,8 @@
+flowchart LR
+  VM["ViewModel / Service"] -->|"findAll()<br/>getByCode(code)"| DAO["TaxonDao"]
+  DAO -->|"PreparedStatement + ResultSet"| DS["DataSource"]
+  DAO -->|"depuis(rs)"| OBJ["Taxon (objet du domaine)"]
+  style VM fill:#4a90d9,color:white
+  style DAO fill:#e8a838,color:white
+  style DS fill:#8e44ad,color:white
+  style OBJ fill:#7bb563,color:white

@@ -1,0 +1,8 @@
+flowchart LR
+  DAO["SiteDao (ex4, inchangé)"] -->|"source.getConnection()"| DS["«interface» DataSource"]
+  DS -.- A["SQLiteDataSource<br/>(ex2 : une connexion neuve par appel)"]
+  DS -.- B["HikariDataSource<br/>(ce bonus : un pool réutilisable)"]
+  style DAO fill:#4a90d9,color:white
+  style DS fill:#8e44ad,color:white
+  style A fill:#7bb563,color:white
+  style B fill:#16a085,color:white

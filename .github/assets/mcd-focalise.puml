@@ -1,0 +1,50 @@
+@startuml
+' MCD focalise : les 5 entites travaillees dans le TP5 (sous-ensemble SAE).
+' Facon brief : attributs metier seuls, pas de cle primaire/etrangere
+' (les FK sont portees par les associations). SVG via render-diagrams.sh.
+skinparam shadowing false
+skinparam dpi 120
+skinparam defaultFontSize 14
+skinparam defaultFontName Helvetica
+skinparam classAttributeIconSize 0
+skinparam classBackgroundColor #D5F5E3
+skinparam classBorderThickness 1.5
+skinparam ArrowColor #34495e
+skinparam ArrowFontColor #34495e
+skinparam ArrowFontSize 12
+
+class "Site de suivi" as Site {
+  n° carré
+  nom convivial
+  protocole
+  commentaire
+  date de création
+}
+class "Point d'écoute" as PointEcoute {
+  code
+  descriptif
+}
+class Passage {
+  n° de passage
+  année
+  date d'enregistrement
+  statut workflow
+  verdict de vérification
+}
+class Observation {
+  temps début
+  temps fin
+  fréquence médiane
+  probabilité
+}
+class Taxon {
+  code
+  nom latin
+  nom vernaculaire
+}
+
+Site "1" -right-> "0..*" PointEcoute : contient
+PointEcoute "1" -right-> "0..*" Passage : fait l'objet de
+Passage "1" -down-> "0..*" Observation : agrège
+Observation "0..*" -left-> "0..1" Taxon : classée comme
+@enduml

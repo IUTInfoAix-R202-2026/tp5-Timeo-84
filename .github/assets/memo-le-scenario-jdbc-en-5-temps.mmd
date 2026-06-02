@@ -1,0 +1,10 @@
+flowchart LR
+  A["1-2 Connexion<br/>getConnection(url)"] --> B["3 Instruction<br/>createStatement()"]
+  B --> C["4a Exécuter<br/>executeQuery(sql)"]
+  C --> D["4b Parcourir<br/>while rs.next()"]
+  D --> E["5 Fermeture<br/>try-with-resources"]
+  style A fill:#4a90d9,color:white
+  style B fill:#e8a838,color:white
+  style C fill:#e8a838,color:white
+  style D fill:#7bb563,color:white
+  style E fill:#b0bec5,color:#333

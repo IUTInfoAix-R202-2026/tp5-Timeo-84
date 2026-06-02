@@ -1,0 +1,28 @@
+@startuml
+' SiteDao : un DAO complet (TP5, encart "Le DAO" de l'exercice 3).
+' SVG regenere par .github/assets/render-diagrams.sh (Kroki local).
+hide empty members
+skinparam shadowing false
+skinparam dpi 120
+skinparam defaultFontSize 15
+skinparam defaultFontName Helvetica
+skinparam classAttributeIconSize 0
+skinparam classAttributeFontSize 14
+skinparam classBorderThickness 1.4
+skinparam ArrowColor #34495e
+skinparam ArrowFontColor #34495e
+skinparam ArrowFontSize 13
+
+class SiteDao #D4E6F1 {
+  +findAll() : List<Site>
+  +getByNumeroCarre(numero) : Optional<Site>
+  +insert(Site)
+  +update(Site)
+  +delete(numero)
+}
+class Site #D5F5E3
+interface DataSource #EAECEE
+
+SiteDao ..> Site : mappe chaque ligne
+SiteDao --> DataSource : obtient ses connexions
+@enduml

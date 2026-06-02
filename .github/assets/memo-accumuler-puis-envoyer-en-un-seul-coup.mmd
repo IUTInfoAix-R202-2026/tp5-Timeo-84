@@ -1,0 +1,5 @@
+flowchart LR
+  A["pour chaque observation :<br/>setX(...) puis addBatch()"] --> B["executeBatch()<br/>un seul envoi groupé"] --> C["commit()"]
+  style A fill:#4a90d9,color:white
+  style B fill:#e8a838,color:white
+  style C fill:#7bb563,color:white

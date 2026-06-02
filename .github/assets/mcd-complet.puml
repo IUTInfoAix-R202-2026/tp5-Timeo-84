@@ -1,0 +1,118 @@
+@startuml
+' MCD complet de la SAE 2.01 (16 entites). Les 5 entites travaillees dans le
+' TP5 sont en vert, les autres en gris. Vue d'ensemble : attributs masques
+' (ils figurent sur le MCD focalise) pour situer le sous-ensemble du TP.
+' SVG via render-diagrams.sh (Kroki local).
+hide members
+skinparam shadowing false
+skinparam dpi 110
+skinparam defaultFontSize 13
+skinparam defaultFontName Helvetica
+skinparam classAttributeIconSize 0
+skinparam classBackgroundColor #EAECEE
+skinparam classBorderThickness 1.2
+skinparam ArrowColor #34495e
+skinparam ArrowFontColor #34495e
+skinparam ArrowFontSize 12
+
+class Utilisateur {
+  identifiant local
+  nom affiché
+}
+class "Site de suivi" as SiteDeSuivi #A9DFBF {
+  n° carré
+  nom convivial
+  protocole
+}
+class "Point d'écoute" as PointDEcoute #A9DFBF {
+  code
+  coordonnées GPS
+  descriptif
+}
+class Enregistreur {
+  n° de série
+  modèle / version
+}
+class Micro {
+  modèle / référence
+  bande passante
+  sensibilité
+  date de mise en service
+}
+class Passage #A9DFBF {
+  n° de passage
+  année
+  date d'enregistrement
+  heure début / fin
+  verdict de vérification
+  statut workflow
+}
+class "Session d'enregistrement" as SessionDEnregistrement {
+  chemin racine
+  volume total
+}
+class "Enregistrement original" as EnregistrementOriginal {
+  nom de fichier
+  durée
+  échantillonnage
+}
+class "Séquence d'écoute" as SequenceDEcoute {
+  nom de fichier
+  index
+  durée
+}
+class "Journal du capteur" as JournalDuCapteur {
+  chemin
+  évènements parsés
+  anomalies détectées
+}
+class "Relevé climatique" as ReleveClimatique {
+  chemin
+  mesures
+}
+class "Sélection d'écoute" as SelectionDEcoute {
+  méthode de constitution
+  taille
+}
+class "Résultats d'identification" as ResultatsIdentification {
+  chemin
+  format détecté
+  date d'import
+}
+class Observation #A9DFBF {
+  temps début
+  temps fin
+  taxon Tadarida
+  probabilité Tadarida
+  taxon observateur
+  probabilité observateur
+}
+class Taxon #A9DFBF {
+  code
+  nom latin
+  nom vernaculaire FR
+}
+class "Groupe taxonomique" as GroupeTaxonomique {
+  niveau
+  nom
+}
+
+Utilisateur "1" --> "1..*" SiteDeSuivi : possède
+SiteDeSuivi "1" --> "1..*" PointDEcoute : contient
+PointDEcoute "1" --> "0..*" Passage : fait l'objet de
+Enregistreur "1" --> "1..*" Passage : a produit
+Enregistreur "1" --> "1" Micro : porte
+Passage "1" --> "1" SessionDEnregistrement : produit
+SessionDEnregistrement "1" --> "1..*" EnregistrementOriginal : contient
+SessionDEnregistrement "1" --> "1..*" SequenceDEcoute : contient
+SessionDEnregistrement "1" --> "1" JournalDuCapteur : référence
+SessionDEnregistrement "1" --> "0..1" ReleveClimatique : référence
+EnregistrementOriginal "1" --> "1..*" SequenceDEcoute : découpé en
+Passage "1" --> "0..1" SelectionDEcoute : à vérifier par
+SelectionDEcoute "1" --> "1..*" SequenceDEcoute : porte sur
+Passage "1" --> "0..1" ResultatsIdentification : annoté par
+ResultatsIdentification "1" --> "1..*" Observation : agrège
+Observation "0..*" --> "1" SequenceDEcoute : détectée dans
+Observation "0..*" --> "1" Taxon : classée comme
+Taxon "1..*" --> "1" GroupeTaxonomique : appartient
+@enduml

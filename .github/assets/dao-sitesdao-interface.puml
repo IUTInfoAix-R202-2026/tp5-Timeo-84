@@ -1,0 +1,27 @@
+@startuml
+' SitesDao : le DAO vu comme une interface + deux implementations (bonus 12).
+' SVG regenere par .github/assets/render-diagrams.sh (Kroki local).
+hide empty members
+skinparam shadowing false
+skinparam dpi 120
+skinparam defaultFontSize 15
+skinparam defaultFontName Helvetica
+skinparam classAttributeIconSize 0
+skinparam classAttributeFontSize 14
+skinparam classBorderThickness 1.4
+skinparam ArrowColor #34495e
+skinparam ArrowFontColor #34495e
+skinparam ArrowFontSize 13
+
+interface SitesDao #E8DAEF {
+  +findAll() : List<Site>
+  +insert(Site)
+}
+class SitesDaoJdbc #D4E6F1
+class SitesDaoEnMemoire #D4E6F1
+class SitesViewModel #EAECEE
+
+SitesViewModel ..> SitesDao : depend de l'interface
+SitesDao <|.. SitesDaoJdbc : production (base reelle)
+SitesDao <|.. SitesDaoEnMemoire : test (sans base)
+@enduml

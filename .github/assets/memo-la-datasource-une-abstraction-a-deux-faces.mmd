@@ -1,0 +1,11 @@
+flowchart LR
+  subgraph Consommateur
+    DAO["DAO / Service"]
+  end
+  DAO -->|"source.getConnection()"| DS["«interface»<br/>DataSource"]
+  DS -.implémentée par.-> SQL["SQLiteDataSource<br/>(ce TP)"]
+  DS -.ou.-> HIK["HikariDataSource<br/>(bonus 9)"]
+  style DAO fill:#4a90d9,color:white
+  style DS fill:#8e44ad,color:white
+  style SQL fill:#7bb563,color:white
+  style HIK fill:#16a085,color:white

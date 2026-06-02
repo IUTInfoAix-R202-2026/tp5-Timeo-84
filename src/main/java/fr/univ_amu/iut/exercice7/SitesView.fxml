@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.ChoiceBox?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.Separator?>
+<?import javafx.scene.control.TableColumn?>
+<?import javafx.scene.control.TableView?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.VBox?>
+
+<VBox xmlns="http://javafx.com/javafx"
+      xmlns:fx="http://javafx.com/fxml"
+      fx:controller="fr.univ_amu.iut.exercice7.SitesController"
+      spacing="12"
+      style="-fx-padding: 16;"
+      prefWidth="640" prefHeight="460">
+
+  <Label text="VigieChiro - Mes sites de suivi (persistés en SQLite)"
+         style="-fx-font-size: 16px; -fx-font-weight: bold;" />
+
+  <TableView fx:id="tableSites" prefHeight="240">
+    <columns>
+      <TableColumn fx:id="colNumero" text="Carré" prefWidth="100" />
+      <TableColumn fx:id="colNom" text="Nom" prefWidth="280" />
+      <TableColumn fx:id="colProtocole" text="Protocole" prefWidth="200" />
+    </columns>
+  </TableView>
+
+  <Label fx:id="labelResume" style="-fx-text-fill: #6a737d;" />
+
+  <Separator />
+
+  <Label text="Déclarer un nouveau site" style="-fx-font-weight: bold;" />
+  <HBox spacing="8">
+    <TextField fx:id="champNumero" promptText="N° carré (6 chiffres)" />
+    <TextField fx:id="champNom" promptText="Nom convivial" />
+    <ChoiceBox fx:id="choiceProtocole" />
+    <Button fx:id="boutonAjouter" text="Ajouter" onAction="#surAjouter" />
+  </HBox>
+
+  <Button fx:id="boutonSupprimer" text="Supprimer le site sélectionné" onAction="#surSupprimer" />
+</VBox>
